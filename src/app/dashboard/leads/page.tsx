@@ -26,6 +26,7 @@ export default function LeadsPage() {
   const [showMeeting, setShowMeeting] = useState<Lead | null>(null);
   const [form, setForm] = useState({ name: '', phone: '', email: '', project_type: 'Столешница', stone_type: 'Мрамор' });
   const [meetingForm, setMeetingForm] = useState({ address: '', meeting_time: '' });
+  const [smsStatus, setSmsStatus] = useState('');
 
   useEffect(() => { loadLeads(); }, []);
 
@@ -43,6 +44,26 @@ export default function LeadsPage() {
     loadLeads();
   };
 
+  const sendSMS = async (lead: Lead) => {
+    setSmsStatus('Отправка...');
+    try {
+      const res = await fetch('/api/twilio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: lead.phone, message: 'PETRA Stone: Здравствуйте, ' + lead.name + '! Вы интересовались ' + lead.project_type + ' из ' + lead.stone_type + '. Когда удобно сделать замер? +79670845006' }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setSmsStatus('Ошибка: ' + data.error);
+      } else {
+        setSmsStatus('SMS отправлено! (заглушка)');
+      }
+    } catch (e) {
+      setSmsStatus('SMS-сервис не настроен (заглушка)');
+    }
+    setTimeout(() => setSmsStatus(''), 3000);
+  };
+
   const addMeeting = async () => {
     if (!showMeeting || !meetingForm.address || !meetingForm.meeting_time) return;
     await supabase.from('leads').update({ address: meetingForm.address, meeting_time: meetingForm.meeting_time, status: 'Замер назначен' }).eq('id', showMeeting.id);
@@ -51,17 +72,7 @@ export default function LeadsPage() {
     loadLeads();
   };
 
-  const deleteLead = async (id: number) => {
-    await supabase.from('leads').delete().eq('id', id);
-    loadLeads();
-  };
-
-  const statusColors: Record<string, string> = {
-    'Новый': 'bg-blue-500/10 text-blue-400',
-    'Замер назначен': 'bg-[#E86C2F]/10 text-[#E86C2F]',
-    'В работе': 'bg-yellow-500/10 text-yellow-400',
-    'Закрыт': 'bg-gray-500/10 text-gray-400',
-  };
+  const deleteLead = async (id: number) => { await supabase.from('leads').delete().eq('id', id); loadLeads(); };
 
   if (loading) return <p className="text-[#C4A882]/40 text-center py-16">Загрузка...</p>;
 
@@ -70,18 +81,20 @@ export default function LeadsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl text-[#F5F0E8] font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>Leads</h1>
-          <p className="text-[#C4A882]/70 mt-1" style={{ fontFamily: 'DM Sans, sans-serif' }}>{leads.length} лидов</p>
+          <p className="text-[#C4A882]/70 mt-1">{leads.length} лидов</p>
         </div>
-        <button onClick={() => setShowForm(true)} className="bg-[#E86C2F] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#E86C2F]/90 transition-all">+ Новый лид</button>
+        <button onClick={() => setShowForm(true)} className="bg-[#E86C2F] text-white px-5 py-2.5 rounded-lg text-sm">+ Новый лид</button>
       </div>
+
+      {smsStatus && <div className="mb-4 bg-green-500/10 border border-green-500/20 rounded-xl p-3 text-green-400 text-sm">{smsStatus}</div>}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setShowForm(false)}>
           <div className="bg-[#0F0B05] border border-[#C4A882]/20 rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-xl text-[#F5F0E8] mb-4 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>Новый лид</h2>
             <div className="space-y-3">
-              <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" placeholder="Имя *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" placeholder="Телефон *" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" placeholder="Имя" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" placeholder="Телефон" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               <select className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" value={form.project_type} onChange={(e) => setForm({ ...form, project_type: e.target.value })}>
                 {projectTypes.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -101,10 +114,10 @@ export default function LeadsPage() {
       {showMeeting && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setShowMeeting(null)}>
           <div className="bg-[#0F0B05] border border-[#C4A882]/20 rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl text-[#F5F0E8] mb-4 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>Назначить замер</h2>
+            <h2 className="text-xl text-[#F5F0E8] mb-4 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>Замер</h2>
             <p className="text-[#C4A882]/70 text-sm mb-3">{showMeeting.name}</p>
             <div className="space-y-3">
-              <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" placeholder="Адрес *" value={meetingForm.address} onChange={(e) => setMeetingForm({ ...meetingForm, address: e.target.value })} />
+              <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" placeholder="Адрес" value={meetingForm.address} onChange={(e) => setMeetingForm({ ...meetingForm, address: e.target.value })} />
               <input type="datetime-local" className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm" value={meetingForm.meeting_time} onChange={(e) => setMeetingForm({ ...meetingForm, meeting_time: e.target.value })} />
             </div>
             <div className="flex gap-3 mt-4">
@@ -115,32 +128,29 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {leads.length === 0 ? (
-        <p className="text-[#C4A882]/40 text-center py-16">Нет лидов</p>
-      ) : (
-        <div className="space-y-2">
-          {leads.map((lead) => (
-            <div key={lead.id} className="bg-[#0F0B05] border border-[#C4A882]/10 rounded-xl p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-3 mb-1">
-                    <p className="text-[#F5F0E8] font-medium">{lead.name}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[lead.status] || ''}`}>{lead.status}</span>
-                  </div>
-                  <p className="text-[#C4A882]/60 text-xs">{lead.phone} {lead.email ? ' - ' + lead.email : ''} - {lead.project_type} - {lead.stone_type}</p>
-                  {lead.meeting_time && <p className="text-[#E86C2F]/70 text-xs mt-1">Замер: {new Date(lead.meeting_time).toLocaleString('ru-RU')} - {lead.address}</p>}
+      <div className="space-y-2">
+        {leads.map((lead) => (
+          <div key={lead.id} className="bg-[#0F0B05] border border-[#C4A882]/10 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <p className="text-[#F5F0E8] font-medium">{lead.name}</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">{lead.status}</span>
                 </div>
-                <div className="flex items-center gap-2 ml-4">
-                  {lead.status === 'Новый' && (
-                    <button onClick={() => { setShowMeeting(lead); setMeetingForm({ address: '', meeting_time: '' }); }} className="text-xs bg-[#E86C2F]/10 text-[#E86C2F] px-3 py-1.5 rounded-lg">Замер</button>
-                  )}
-                  <button onClick={() => deleteLead(lead.id)} className="text-red-400/30 hover:text-red-400 text-sm">X</button>
-                </div>
+                <p className="text-[#C4A882]/60 text-xs">{lead.phone} - {lead.project_type} - {lead.stone_type}</p>
+                {lead.meeting_time && <p className="text-[#E86C2F]/70 text-xs mt-1">Замер: {new Date(lead.meeting_time).toLocaleString('ru-RU')}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                {lead.status === 'Новый' && (
+                  <button onClick={() => { setShowMeeting(lead); setMeetingForm({ address: '', meeting_time: '' }); }} className="text-xs bg-[#E86C2F]/10 text-[#E86C2F] px-3 py-1.5 rounded-lg">Замер</button>
+                )}
+                <button onClick={() => sendSMS(lead)} className="text-xs bg-green-500/10 text-green-400 px-3 py-1.5 rounded-lg">SMS</button>
+                <button onClick={() => deleteLead(lead.id)} className="text-red-400/30 hover:text-red-400 text-sm">X</button>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
