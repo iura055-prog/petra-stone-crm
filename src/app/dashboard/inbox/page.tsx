@@ -1,6 +1,7 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 interface Email {
   id: string;
@@ -9,6 +10,13 @@ interface Email {
   date: string;
   body: string;
   seen: boolean;
+}
+
+interface Client {
+  id: number;
+  name: string;
+  phone: string;
+  email: string;
 }
 
 export default function InboxPage() {
@@ -21,6 +29,7 @@ export default function InboxPage() {
   const [limit, setLimit] = useState(20);
   const [generating, setGenerating] = useState(false);
   const [forwardMode, setForwardMode] = useState(false);
+  const [clientCheck, setClientCheck] = useState<{ found: boolean; client?: Client } | null>(null);
 
   const loadEmails = async () => {
     setLoading(true);
@@ -35,17 +44,39 @@ export default function InboxPage() {
 
   const loadMore = () => { setLimit(limit + 50); setTimeout(() => loadEmails(), 100); };
 
+  const extractEmail = (from: string) => from.includes('<') ? from.split('<')[1].split('>')[0].trim().toLowerCase() : from.trim().toLowerCase();
+  const extractName = (from: string) => from.includes('<') ? from.split('<')[0].replace(/"/g, '').trim() : '';
+
   const openEmail = async (email: Email) => {
-    const addr = email.from.includes('<') ? email.from.split('<')[1].split('>')[0] : email.from;
+    const addr = extractEmail(email.from);
     setSelected(email);
     setReplyTo(addr);
     setEditedReply('');
     setForwardMode(false);
     setStatus('');
+    setClientCheck(null);
+
     if (!email.seen) {
       fetch('/api/inbox/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: email.id }) });
       setEmails(emails.map(e => e.id === email.id ? { ...e, seen: true } : e));
     }
+
+    const { data } = await supabase.from('clients').select('id, name, phone, email').ilike('email', '%' + addr + '%').limit(1);
+    if (data && data.length > 0) {
+      setClientCheck({ found: true, client: data[0] });
+    } else {
+      setClientCheck({ found: false });
+    }
+  };
+
+  const addClient = async () => {
+    if (!selected) return;
+    const name = extractName(selected.from) || extractEmail(selected.from);
+    const email = extractEmail(selected.from);
+    await supabase.from('clients').insert([{ name, email, type: 'Частное лицо', source: 'Входящее письмо' }]);
+    const { data } = await supabase.from('clients').select('id, name, phone, email').ilike('email', '%' + email + '%').limit(1);
+    if (data && data.length > 0) setClientCheck({ found: true, client: data[0] });
+    setStatus('Контакт добавлен!');
   };
 
   const generateReply = async () => {
@@ -135,10 +166,21 @@ export default function InboxPage() {
       {selected && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setSelected(null)}>
           <div className="bg-[#0F0B05] border border-[#C4A882]/20 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl text-[#F5F0E8] mb-2 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>
-              {forwardMode ? 'Переслать: ' : ''}{selected.subject}
-            </h2>
-            <p className="text-[#C4A882]/60 text-sm mb-4">От: {selected.from} | {selected.date ? new Date(selected.date).toLocaleString('ru-RU') : ''}</p>
+            <h2 className="text-xl text-[#F5F0E8] mb-2 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>{forwardMode ? 'Переслать: ' : ''}{selected.subject}</h2>
+            <p className="text-[#C4A882]/60 text-sm mb-2">От: {selected.from} | {selected.date ? new Date(selected.date).toLocaleString('ru-RU') : ''}</p>
+
+            {clientCheck && !clientCheck.found && (
+              <div className="bg-[#E86C2F]/10 border border-[#E86C2F]/20 rounded-lg p-3 mb-3 flex items-center justify-between">
+                <p className="text-[#E86C2F] text-sm">Этого контакта нет в базе клиентов</p>
+                <button onClick={addClient} className="bg-[#E86C2F] text-white px-4 py-1.5 rounded-lg text-xs hover:bg-[#E86C2F]/90 transition-all">Добавить</button>
+              </div>
+            )}
+            {clientCheck && clientCheck.found && clientCheck.client && (
+              <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-2 mb-3">
+                <p className="text-green-400 text-xs">В базе: {clientCheck.client.name} {clientCheck.client.phone ? '| ' + clientCheck.client.phone : ''}</p>
+              </div>
+            )}
+
             <div className="bg-[#1A1208] border border-[#C4A882]/10 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
               <p className="text-[#C4A882]/80 text-sm whitespace-pre-wrap">{selected.body}</p>
             </div>
