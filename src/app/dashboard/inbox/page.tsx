@@ -20,6 +20,7 @@ export default function InboxPage() {
   const [status, setStatus] = useState('');
   const [limit, setLimit] = useState(20);
   const [generating, setGenerating] = useState(false);
+  const [forwardMode, setForwardMode] = useState(false);
 
   const loadEmails = async () => {
     setLoading(true);
@@ -39,6 +40,7 @@ export default function InboxPage() {
     setSelected(email);
     setReplyTo(addr);
     setEditedReply('');
+    setForwardMode(false);
     setStatus('');
     if (!email.seen) {
       fetch('/api/inbox/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: email.id }) });
@@ -50,6 +52,7 @@ export default function InboxPage() {
     if (!selected) return;
     setGenerating(true);
     setStatus('AI генерирует ответ...');
+    setForwardMode(false);
     try {
       const res = await fetch('/api/inbox/reply', {
         method: 'POST',
@@ -63,17 +66,32 @@ export default function InboxPage() {
     setGenerating(false);
   };
 
+  const startForward = () => {
+    if (!selected) return;
+    setForwardMode(true);
+    setReplyTo('');
+    setEditedReply(
+      '--- Пересылаемое письмо ---\n' +
+      'От: ' + selected.from + '\n' +
+      'Дата: ' + (selected.date ? new Date(selected.date).toLocaleString('ru-RU') : '') + '\n' +
+      'Тема: ' + selected.subject + '\n\n' +
+      selected.body
+    );
+    setStatus('');
+  };
+
   const sendReply = async () => {
     if (!replyTo.trim()) { setStatus('Введите адрес получателя'); return; }
     setStatus('Отправка...');
     try {
+      const subject = forwardMode ? 'Fwd: ' + (selected?.subject || '') : 'Re: ' + (selected?.subject || '');
       const res = await fetch('/api/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: replyTo, subject: 'Re: ' + (selected?.subject || ''), html: editedReply.replace(/\n/g, '<br>') }),
+        body: JSON.stringify({ to: replyTo, subject, html: editedReply.replace(/\n/g, '<br>') }),
       });
       const data = await res.json();
-      if (data.success) { setStatus('Ответ отправлен!'); setSelected(null); }
+      if (data.success) { setStatus(forwardMode ? 'Переслано!' : 'Ответ отправлен!'); setSelected(null); }
       else setStatus('Ошибка отправки: ' + data.error);
     } catch (e) { setStatus('Ошибка соединения'); }
   };
@@ -117,7 +135,9 @@ export default function InboxPage() {
       {selected && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setSelected(null)}>
           <div className="bg-[#0F0B05] border border-[#C4A882]/20 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl text-[#F5F0E8] mb-2 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>{selected.subject}</h2>
+            <h2 className="text-xl text-[#F5F0E8] mb-2 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>
+              {forwardMode ? 'Переслать: ' : ''}{selected.subject}
+            </h2>
             <p className="text-[#C4A882]/60 text-sm mb-4">От: {selected.from} | {selected.date ? new Date(selected.date).toLocaleString('ru-RU') : ''}</p>
             <div className="bg-[#1A1208] border border-[#C4A882]/10 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
               <p className="text-[#C4A882]/80 text-sm whitespace-pre-wrap">{selected.body}</p>
@@ -127,7 +147,7 @@ export default function InboxPage() {
                 <button onClick={generateReply} disabled={generating} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm hover:bg-[#E86C2F]/90 transition-all disabled:opacity-50">
                   {generating ? 'Генерация...' : 'Подготовить ответ'}
                 </button>
-                <button onClick={() => alert('Пересылка в разработке')} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm">Переслать</button>
+                <button onClick={startForward} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm hover:border-[#C4A882]/40 transition-all">Переслать</button>
                 <button onClick={() => setSelected(null)} className="flex-1 border border-red-500/20 text-red-400 py-2.5 rounded-lg text-sm">Отмена</button>
               </div>
             ) : (
@@ -135,10 +155,10 @@ export default function InboxPage() {
                 {status && <p className="text-yellow-400 text-sm mb-2">{status}</p>}
                 <label className="text-[#C4A882]/50 text-xs mb-1 block">Кому:</label>
                 <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm mb-3" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="email@example.com" />
-                <label className="text-[#C4A882]/50 text-xs mb-1 block">Ответ:</label>
+                <label className="text-[#C4A882]/50 text-xs mb-1 block">{forwardMode ? 'Письмо:' : 'Ответ:'}</label>
                 <textarea className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm mb-4" rows={8} value={editedReply} onChange={(e) => setEditedReply(e.target.value)} />
                 <div className="flex gap-3">
-                  <button onClick={sendReply} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm">Отправить ответ</button>
+                  <button onClick={sendReply} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm">{forwardMode ? 'Отправить пересылку' : 'Отправить ответ'}</button>
                   <button onClick={() => setSelected(null)} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm">Отмена</button>
                 </div>
               </>
