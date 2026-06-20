@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface Email {
@@ -19,6 +19,8 @@ interface Client {
   email: string;
 }
 
+type Category = 'clients' | 'suppliers' | 'production' | 'employees';
+
 export default function InboxPage() {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,7 +31,8 @@ export default function InboxPage() {
   const [limit, setLimit] = useState(20);
   const [generating, setGenerating] = useState(false);
   const [forwardMode, setForwardMode] = useState(false);
-  const [clientCheck, setClientCheck] = useState<{ found: boolean; client?: Client } | null>(null);
+  const [clientCheck, setClientCheck] = useState<{ found: boolean; client?: Client; category?: string } | null>(null);
+  const [showCategorySelect, setShowCategorySelect] = useState(false);
 
   const loadEmails = async () => {
     setLoading(true);
@@ -47,6 +50,20 @@ export default function InboxPage() {
   const extractEmail = (from: string) => from.includes('<') ? from.split('<')[1].split('>')[0].trim().toLowerCase() : from.trim().toLowerCase();
   const extractName = (from: string) => from.includes('<') ? from.split('<')[0].replace(/"/g, '').trim() : '';
 
+  const checkContact = async (email: string) => {
+    const tables: { table: string; category: string }[] = [
+      { table: 'clients', category: 'Клиент' },
+      { table: 'suppliers', category: 'Поставщик' },
+      { table: 'production', category: 'Производство' },
+      { table: 'employees', category: 'Сотрудник' },
+    ];
+    for (const t of tables) {
+      const { data } = await supabase.from(t.table).select('id, name, phone, email').ilike('email', '%' + email + '%').limit(1);
+      if (data && data.length > 0) return { found: true, client: data[0], category: t.category };
+    }
+    return { found: false };
+  };
+
   const openEmail = async (email: Email) => {
     const addr = extractEmail(email.from);
     setSelected(email);
@@ -54,28 +71,25 @@ export default function InboxPage() {
     setEditedReply('');
     setForwardMode(false);
     setStatus('');
-    setClientCheck(null);
+    setShowCategorySelect(false);
 
     if (!email.seen) {
       fetch('/api/inbox/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: email.id }) });
       setEmails(emails.map(e => e.id === email.id ? { ...e, seen: true } : e));
     }
 
-    const { data } = await supabase.from('clients').select('id, name, phone, email').ilike('email', '%' + addr + '%').limit(1);
-    if (data && data.length > 0) {
-      setClientCheck({ found: true, client: data[0] });
-    } else {
-      setClientCheck({ found: false });
-    }
+    const result = await checkContact(addr);
+    setClientCheck(result as any);
   };
 
-  const addClient = async () => {
+  const addContact = async (category: Category) => {
     if (!selected) return;
     const name = extractName(selected.from) || extractEmail(selected.from);
     const email = extractEmail(selected.from);
-    await supabase.from('clients').insert([{ name, email, type: 'Частное лицо', source: 'Входящее письмо' }]);
-    const { data } = await supabase.from('clients').select('id, name, phone, email').ilike('email', '%' + email + '%').limit(1);
-    if (data && data.length > 0) setClientCheck({ found: true, client: data[0] });
+    await supabase.from(category).insert([{ name, email, type: category === 'clients' ? 'Частное лицо' : '', source: 'Входящее письмо', status: category === 'production' ? 'Принят' : '' }]);
+    const result = await checkContact(email);
+    setClientCheck(result as any);
+    setShowCategorySelect(false);
     setStatus('Контакт добавлен!');
   };
 
@@ -101,13 +115,7 @@ export default function InboxPage() {
     if (!selected) return;
     setForwardMode(true);
     setReplyTo('');
-    setEditedReply(
-      '--- Пересылаемое письмо ---\n' +
-      'От: ' + selected.from + '\n' +
-      'Дата: ' + (selected.date ? new Date(selected.date).toLocaleString('ru-RU') : '') + '\n' +
-      'Тема: ' + selected.subject + '\n\n' +
-      selected.body
-    );
+    setEditedReply('--- Пересылаемое письмо ---\nОт: ' + selected.from + '\nДата: ' + (selected.date ? new Date(selected.date).toLocaleString('ru-RU') : '') + '\nТема: ' + selected.subject + '\n\n' + selected.body);
     setStatus('');
   };
 
@@ -116,16 +124,19 @@ export default function InboxPage() {
     setStatus('Отправка...');
     try {
       const subject = forwardMode ? 'Fwd: ' + (selected?.subject || '') : 'Re: ' + (selected?.subject || '');
-      const res = await fetch('/api/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: replyTo, subject, html: editedReply.replace(/\n/g, '<br>') }),
-      });
+      const res = await fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: replyTo, subject, html: editedReply.replace(/\n/g, '<br>') }) });
       const data = await res.json();
       if (data.success) { setStatus(forwardMode ? 'Переслано!' : 'Ответ отправлен!'); setSelected(null); }
       else setStatus('Ошибка отправки: ' + data.error);
     } catch (e) { setStatus('Ошибка соединения'); }
   };
+
+  const categories: { key: Category; label: string }[] = [
+    { key: 'clients', label: 'Клиент' },
+    { key: 'suppliers', label: 'Поставщик' },
+    { key: 'production', label: 'Производство' },
+    { key: 'employees', label: 'Сотрудник Petra' },
+  ];
 
   const unreadCount = emails.filter(e => !e.seen).length;
 
@@ -134,20 +145,14 @@ export default function InboxPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl text-[#F5F0E8] font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>Входящие</h1>
-          <p className="text-[#C4A882]/70 mt-1" style={{ fontFamily: 'DM Sans, sans-serif' }}>
-            hi@petra-design.ru - {emails.length} писем {unreadCount > 0 && '(непрочитано: ' + unreadCount + ')'}
-          </p>
+          <p className="text-[#C4A882]/70 mt-1" style={{ fontFamily: 'DM Sans, sans-serif' }}>hi@petra-design.ru - {emails.length} писем {unreadCount > 0 && '(непрочитано: ' + unreadCount + ')'}</p>
         </div>
-        <button onClick={loadEmails} disabled={loading} className="bg-[#E86C2F] text-white px-5 py-2.5 rounded-lg text-sm hover:bg-[#E86C2F]/90 transition-all disabled:opacity-50">
-          {loading ? 'Загрузка...' : 'Проверить почту'}
-        </button>
+        <button onClick={loadEmails} disabled={loading} className="bg-[#E86C2F] text-white px-5 py-2.5 rounded-lg text-sm hover:bg-[#E86C2F]/90 transition-all disabled:opacity-50">{loading ? 'Загрузка...' : 'Проверить почту'}</button>
       </div>
       {status && !selected && <div className="mb-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-yellow-400 text-sm">{status}</div>}
       <div className="space-y-2 mb-4">
         {emails.length === 0 && !loading ? <p className="text-[#C4A882]/40 text-center py-8">Нажмите Проверить почту</p> : emails.map((email) => (
-          <div key={email.id}
-            className={'rounded-xl p-4 cursor-pointer transition-all border ' + (!email.seen ? 'bg-[#E86C2F]/5 border-[#E86C2F]/20' : 'bg-[#0F0B05] border-[#C4A882]/10 hover:border-[#C4A882]/20')}
-            onClick={() => openEmail(email)}>
+          <div key={email.id} className={'rounded-xl p-4 cursor-pointer transition-all border ' + (!email.seen ? 'bg-[#E86C2F]/5 border-[#E86C2F]/20' : 'bg-[#0F0B05] border-[#C4A882]/10 hover:border-[#C4A882]/20')} onClick={() => openEmail(email)}>
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 {!email.seen && <span className="w-2 h-2 rounded-full bg-[#E86C2F]"></span>}
@@ -160,24 +165,33 @@ export default function InboxPage() {
           </div>
         ))}
       </div>
-      {emails.length > 0 && (
-        <button onClick={loadMore} className="w-full py-2 border border-[#C4A882]/20 text-[#C4A882] rounded-lg text-sm hover:border-[#C4A882]/40 transition-all">Загрузить ещё 50 писем</button>
-      )}
+      {emails.length > 0 && <button onClick={loadMore} className="w-full py-2 border border-[#C4A882]/20 text-[#C4A882] rounded-lg text-sm hover:border-[#C4A882]/40 transition-all">Загрузить ещё 50 писем</button>}
       {selected && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setSelected(null)}>
           <div className="bg-[#0F0B05] border border-[#C4A882]/20 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-xl text-[#F5F0E8] mb-2 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>{forwardMode ? 'Переслать: ' : ''}{selected.subject}</h2>
             <p className="text-[#C4A882]/60 text-sm mb-2">От: {selected.from} | {selected.date ? new Date(selected.date).toLocaleString('ru-RU') : ''}</p>
 
-            {clientCheck && !clientCheck.found && (
+            {clientCheck && !clientCheck.found && !showCategorySelect && (
               <div className="bg-[#E86C2F]/10 border border-[#E86C2F]/20 rounded-lg p-3 mb-3 flex items-center justify-between">
-                <p className="text-[#E86C2F] text-sm">Этого контакта нет в базе клиентов</p>
-                <button onClick={addClient} className="bg-[#E86C2F] text-white px-4 py-1.5 rounded-lg text-xs hover:bg-[#E86C2F]/90 transition-all">Добавить</button>
+                <p className="text-[#E86C2F] text-sm">Контакта нет в базе</p>
+                <button onClick={() => setShowCategorySelect(true)} className="bg-[#E86C2F] text-white px-4 py-1.5 rounded-lg text-xs hover:bg-[#E86C2F]/90">Добавить</button>
+              </div>
+            )}
+            {clientCheck && !clientCheck.found && showCategorySelect && (
+              <div className="bg-[#E86C2F]/10 border border-[#E86C2F]/20 rounded-lg p-3 mb-3">
+                <p className="text-[#E86C2F] text-sm mb-2">Выберите категорию:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {categories.map(cat => (
+                    <button key={cat.key} onClick={() => addContact(cat.key)} className="bg-[#E86C2F]/20 text-[#E86C2F] py-2 rounded-lg text-xs hover:bg-[#E86C2F]/30 transition-all">{cat.label}</button>
+                  ))}
+                </div>
+                <button onClick={() => setShowCategorySelect(false)} className="w-full mt-2 border border-[#C4A882]/20 text-[#C4A882] py-1.5 rounded-lg text-xs">Отмена</button>
               </div>
             )}
             {clientCheck && clientCheck.found && clientCheck.client && (
               <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-2 mb-3">
-                <p className="text-green-400 text-xs">В базе: {clientCheck.client.name} {clientCheck.client.phone ? '| ' + clientCheck.client.phone : ''}</p>
+                <p className="text-green-400 text-xs">{clientCheck.category}: {clientCheck.client.name} {clientCheck.client.phone ? '| ' + clientCheck.client.phone : ''}</p>
               </div>
             )}
 
@@ -186,10 +200,8 @@ export default function InboxPage() {
             </div>
             {!editedReply ? (
               <div className="flex gap-3">
-                <button onClick={generateReply} disabled={generating} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm hover:bg-[#E86C2F]/90 transition-all disabled:opacity-50">
-                  {generating ? 'Генерация...' : 'Подготовить ответ'}
-                </button>
-                <button onClick={startForward} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm hover:border-[#C4A882]/40 transition-all">Переслать</button>
+                <button onClick={generateReply} disabled={generating} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm hover:bg-[#E86C2F]/90 transition-all disabled:opacity-50">{generating ? 'Генерация...' : 'Подготовить ответ'}</button>
+                <button onClick={startForward} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm hover:border-[#C4A882]/40">Переслать</button>
                 <button onClick={() => setSelected(null)} className="flex-1 border border-red-500/20 text-red-400 py-2.5 rounded-lg text-sm">Отмена</button>
               </div>
             ) : (
