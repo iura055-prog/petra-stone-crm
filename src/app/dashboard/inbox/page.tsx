@@ -16,8 +16,10 @@ export default function InboxPage() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Email | null>(null);
   const [editedReply, setEditedReply] = useState('');
+  const [replyTo, setReplyTo] = useState('');
   const [status, setStatus] = useState('');
   const [limit, setLimit] = useState(20);
+  const [generating, setGenerating] = useState(false);
 
   const loadEmails = async () => {
     setLoading(true);
@@ -32,29 +34,43 @@ export default function InboxPage() {
 
   const loadMore = () => { setLimit(limit + 50); setTimeout(() => loadEmails(), 100); };
 
-  const generateReply = async (email: Email) => {
+  const openEmail = async (email: Email) => {
+    const addr = email.from.includes('<') ? email.from.split('<')[1].split('>')[0] : email.from;
     setSelected(email);
+    setReplyTo(addr);
+    setEditedReply('');
+    setStatus('');
+    if (!email.seen) {
+      fetch('/api/inbox/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: email.id }) });
+      setEmails(emails.map(e => e.id === email.id ? { ...e, seen: true } : e));
+    }
+  };
+
+  const generateReply = async () => {
+    if (!selected) return;
+    setGenerating(true);
     setStatus('AI генерирует ответ...');
     try {
       const res = await fetch('/api/inbox/reply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: email.from, subject: email.subject, body: email.body }),
+        body: JSON.stringify({ from: selected.from, subject: selected.subject, body: selected.body }),
       });
       const data = await res.json();
       if (data.reply) { setEditedReply(data.reply); setStatus(''); }
       else setStatus('Ошибка AI: ' + (data.error || ''));
     } catch (e) { setStatus('Ошибка соединения'); }
+    setGenerating(false);
   };
 
   const sendReply = async () => {
+    if (!replyTo.trim()) { setStatus('Введите адрес получателя'); return; }
     setStatus('Отправка...');
     try {
-      const recipient = selected ? (selected.from.includes('<') ? selected.from.split('<')[1].split('>')[0] : selected.from) : '';
       const res = await fetch('/api/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: recipient, subject: 'Re: ' + (selected?.subject || ''), html: editedReply.replace(/\n/g, '<br>') }),
+        body: JSON.stringify({ to: replyTo, subject: 'Re: ' + (selected?.subject || ''), html: editedReply.replace(/\n/g, '<br>') }),
       });
       const data = await res.json();
       if (data.success) { setStatus('Ответ отправлен!'); setSelected(null); }
@@ -82,7 +98,7 @@ export default function InboxPage() {
         {emails.length === 0 && !loading ? <p className="text-[#C4A882]/40 text-center py-8">Нажмите Проверить почту</p> : emails.map((email) => (
           <div key={email.id}
             className={'rounded-xl p-4 cursor-pointer transition-all border ' + (!email.seen ? 'bg-[#E86C2F]/5 border-[#E86C2F]/20' : 'bg-[#0F0B05] border-[#C4A882]/10 hover:border-[#C4A882]/20')}
-            onClick={() => generateReply(email)}>
+            onClick={() => openEmail(email)}>
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 {!email.seen && <span className="w-2 h-2 rounded-full bg-[#E86C2F]"></span>}
@@ -101,19 +117,32 @@ export default function InboxPage() {
       {selected && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setSelected(null)}>
           <div className="bg-[#0F0B05] border border-[#C4A882]/20 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl text-[#F5F0E8] mb-2 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>Ответ клиенту</h2>
-            <p className="text-[#C4A882]/60 text-sm mb-2">От: {selected.from} | Тема: {selected.subject}</p>
+            <h2 className="text-xl text-[#F5F0E8] mb-2 font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>{selected.subject}</h2>
+            <p className="text-[#C4A882]/60 text-sm mb-4">От: {selected.from} | {selected.date ? new Date(selected.date).toLocaleString('ru-RU') : ''}</p>
             <div className="bg-[#1A1208] border border-[#C4A882]/10 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
-              <p className="text-[#C4A882]/50 text-xs mb-2">Входящее письмо:</p>
               <p className="text-[#C4A882]/80 text-sm whitespace-pre-wrap">{selected.body}</p>
             </div>
-            {status && <p className="text-yellow-400 text-sm mb-2">{status}</p>}
-            <p className="text-[#C4A882]/50 text-xs mb-2">AI ответ (можно редактировать):</p>
-            <textarea className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm mb-4" rows={8} value={editedReply} onChange={(e) => setEditedReply(e.target.value)} />
-            <div className="flex gap-3">
-              <button onClick={sendReply} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm">Отправить ответ</button>
-              <button onClick={() => setSelected(null)} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm">Отмена</button>
-            </div>
+            {!editedReply ? (
+              <div className="flex gap-3">
+                <button onClick={generateReply} disabled={generating} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm hover:bg-[#E86C2F]/90 transition-all disabled:opacity-50">
+                  {generating ? 'Генерация...' : 'Подготовить ответ'}
+                </button>
+                <button onClick={() => alert('Пересылка в разработке')} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm">Переслать</button>
+                <button onClick={() => setSelected(null)} className="flex-1 border border-red-500/20 text-red-400 py-2.5 rounded-lg text-sm">Отмена</button>
+              </div>
+            ) : (
+              <>
+                {status && <p className="text-yellow-400 text-sm mb-2">{status}</p>}
+                <label className="text-[#C4A882]/50 text-xs mb-1 block">Кому:</label>
+                <input className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm mb-3" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="email@example.com" />
+                <label className="text-[#C4A882]/50 text-xs mb-1 block">Ответ:</label>
+                <textarea className="w-full px-3 py-2.5 bg-[#1A1208] border border-[#C4A882]/20 rounded-lg text-[#F5F0E8] text-sm mb-4" rows={8} value={editedReply} onChange={(e) => setEditedReply(e.target.value)} />
+                <div className="flex gap-3">
+                  <button onClick={sendReply} className="flex-1 bg-[#E86C2F] text-white py-2.5 rounded-lg text-sm">Отправить ответ</button>
+                  <button onClick={() => setSelected(null)} className="flex-1 border border-[#C4A882]/20 text-[#C4A882] py-2.5 rounded-lg text-sm">Отмена</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
