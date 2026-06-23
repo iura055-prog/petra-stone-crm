@@ -8,6 +8,7 @@ const menuItems = [
   { label: 'Входящие', href: '/dashboard/inbox' },
   { label: 'Клиенты', href: '/dashboard/clients' },
   { label: 'Поставщики', href: '/dashboard/suppliers' },
+  { label: 'Производство', href: '/dashboard/production' },
   { label: 'Estimate Calendar', href: '/dashboard/estimate-calendar' },
   { label: 'Estimate Calculator', href: '/dashboard/estimate-calculator' },
   { label: 'Estimate Data', href: '/dashboard/estimate-data' },
