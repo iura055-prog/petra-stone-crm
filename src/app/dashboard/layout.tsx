@@ -6,10 +6,16 @@ import { useEffect, useState } from 'react';
 const menuItems = [
   { label: 'Leads', href: '/dashboard/leads' },
   { label: 'Входящие', href: '/dashboard/inbox' },
-  { label: 'Клиенты', href: '/dashboard/clients' },
-  { label: 'Поставщики', href: '/dashboard/suppliers' },
-  { label: 'Производство', href: '/dashboard/production' },
-  { label: 'Сотрудники', href: '/dashboard/employees' },
+  { 
+    label: 'Контакты', 
+    href: '/dashboard/clients',
+    submenu: [
+      { label: 'Клиенты', href: '/dashboard/clients' },
+      { label: 'Поставщики', href: '/dashboard/suppliers' },
+      { label: 'Производство', href: '/dashboard/production' },
+      { label: 'Сотрудники', href: '/dashboard/employees' },
+    ]
+  },
   { label: 'Estimate Calendar', href: '/dashboard/estimate-calendar' },
   { label: 'Estimate Calculator', href: '/dashboard/estimate-calculator' },
   { label: 'Estimate Data', href: '/dashboard/estimate-data' },
@@ -24,12 +30,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('petra_user');
     if (!stored) { router.push('/'); return; }
     setMounted(true);
   }, [router]);
+
+  useEffect(() => {
+    if (pathname.startsWith('/dashboard/clients') || pathname.startsWith('/dashboard/suppliers') || pathname.startsWith('/dashboard/production') || pathname.startsWith('/dashboard/employees')) {
+      setExpandedMenu('Контакты');
+    }
+  }, [pathname]);
 
   if (!mounted) return null;
 
@@ -42,14 +55,44 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <nav className="flex-1 py-4 overflow-y-auto">
           {menuItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = item.submenu 
+              ? pathname.startsWith('/dashboard/clients') || pathname.startsWith('/dashboard/suppliers') || pathname.startsWith('/dashboard/production') || pathname.startsWith('/dashboard/employees')
+              : pathname === item.href;
+            const isExpanded = expandedMenu === item.label;
+
             return (
-              <button key={item.href} onClick={() => router.push(item.href)}
-                className={'w-full text-left px-6 py-2.5 text-sm transition-all duration-200 flex items-center gap-3 ' + (isActive ? 'text-[#E86C2F] bg-[#E86C2F]/5 border-r-2 border-[#E86C2F]' : 'text-[#C4A882]/70 hover:text-[#C4A882] hover:bg-[#C4A882]/5')}
-                style={{ fontFamily: 'DM Sans, sans-serif' }}>
-                <span className={'w-1.5 h-1.5 rounded-full ' + (isActive ? 'bg-[#E86C2F]' : 'bg-[#C4A882]/30')} />
-                {item.label}
-              </button>
+              <div key={item.label}>
+                <button 
+                  onClick={() => {
+                    if (item.submenu) {
+                      setExpandedMenu(isExpanded ? null : item.label);
+                      if (!isExpanded) router.push(item.submenu[0].href);
+                    } else {
+                      router.push(item.href);
+                    }
+                  }}
+                  className={'w-full text-left px-6 py-2.5 text-sm transition-all duration-200 flex items-center gap-3 ' + (isActive ? 'text-[#E86C2F] bg-[#E86C2F]/5 border-r-2 border-[#E86C2F]' : 'text-[#C4A882]/70 hover:text-[#C4A882] hover:bg-[#C4A882]/5')}
+                  style={{ fontFamily: 'DM Sans, sans-serif' }}>
+                  <span className={'w-1.5 h-1.5 rounded-full ' + (isActive ? 'bg-[#E86C2F]' : 'bg-[#C4A882]/30')} />
+                  {item.label}
+                  {item.submenu && (
+                    <span className="ml-auto text-xs">{isExpanded ? '' : ''}</span>
+                  )}
+                </button>
+                {item.submenu && isExpanded && (
+                  <div className="ml-8 border-l border-[#C4A882]/10">
+                    {item.submenu.map((sub) => (
+                      <button
+                        key={sub.href}
+                        onClick={() => router.push(sub.href)}
+                        className={'w-full text-left px-4 py-2 text-xs transition-all ' + (pathname === sub.href ? 'text-[#E86C2F]' : 'text-[#C4A882]/50 hover:text-[#C4A882]')}
+                        style={{ fontFamily: 'DM Sans, sans-serif' }}>
+                        {sub.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
