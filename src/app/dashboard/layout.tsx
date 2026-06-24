@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 const menuItems = [
   { label: 'Leads', href: '/dashboard/leads' },
   { label: 'Входящие', href: '/dashboard/inbox' },
+  { label: 'Отправленные', href: '/dashboard/sent' },
   { 
     label: 'Контакты', 
     href: '/dashboard/clients',
