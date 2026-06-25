@@ -4,7 +4,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 const menuItems = [
-  { label: 'Leads', href: '/dashboard/leads' },
+  { label: 'Лиды', href: '/dashboard/leads' },
   { label: 'Входящие', href: '/dashboard/inbox' },
   { label: 'Отправленные', href: '/dashboard/sent' },
   { 
@@ -17,14 +17,14 @@ const menuItems = [
       { label: 'Сотрудники', href: '/dashboard/employees' },
     ]
   },
-  { label: 'Estimate Calendar', href: '/dashboard/estimate-calendar' },
-  { label: 'Estimate Calculator', href: '/dashboard/estimate-calculator' },
-  { label: 'Estimate Data', href: '/dashboard/estimate-data' },
-  { label: 'Proposals', href: '/dashboard/proposals' },
-  { label: 'Contracts', href: '/dashboard/contracts' },
-  { label: 'Image Designer', href: '/dashboard/image-designer' },
-  { label: 'Follow Up', href: '/dashboard/follow-up' },
-  { label: 'Tasks', href: '/dashboard/tasks' },
+  { label: 'Календарный план', href: '/dashboard/estimate-calendar' },
+  { label: 'Калькулятор смет', href: '/dashboard/estimate-calculator' },
+  { label: 'База смет', href: '/dashboard/estimate-data' },
+  { label: 'Коммерческие предложения', href: '/dashboard/proposals' },
+  { label: 'Контракты', href: '/dashboard/contracts' },
+  { label: 'Дизайнер изображений', href: '/dashboard/image-designer' },
+  { label: 'Напоминание', href: '/dashboard/follow-up' },
+  { label: 'Задачи', href: '/dashboard/tasks' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -49,7 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen bg-[#1A1208]">
-      <aside className="w-64 bg-[#0F0B05] border-r border-[#C4A882]/10 flex flex-col fixed left-0 top-0 h-screen z-50">
+      <aside className="w-72 bg-[#0F0B05] border-r border-[#C4A882]/10 flex flex-col fixed left-0 top-0 h-screen z-50">
         <div className="p-6 border-b border-[#C4A882]/10">
           <h1 className="text-2xl text-[#F5F0E8] font-display" style={{ fontFamily: 'DM Serif Display, serif' }}>PETRA</h1>
           <p className="text-[#C4A882]/50 text-xs mt-1" style={{ fontFamily: 'DM Sans, sans-serif' }}>Stone for home</p>
@@ -103,7 +103,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             style={{ fontFamily: 'DM Sans, sans-serif' }}>Выйти</button>
         </div>
       </aside>
-      <main className="flex-1 ml-64 p-8">{children}</main>
+      <main className="flex-1 ml-72 p-8">{children}</main>
     </div>
   );
 }
